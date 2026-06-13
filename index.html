@@ -277,8 +277,12 @@
       if (Math.abs(velY) < 0.0001) velY = 0;
       if (auto && velX === 0 && velY === 0) rotY += 0.0016;
     }
-    viewGroup.rotation.y = rotY;
+  // 1. まず、手動でのドラッグ回転や自動回転（rotY）を「地球そのもの」に直接与えて自転させます
+    earth.rotation.y = rotY;
+    
+    // 2. viewGroup（外側の枠）には、ドラッグしたとき上下の視点移動（rotX）だけを担当させます
     viewGroup.rotation.x = rotX;
+    
     renderer.render(scene, camera);
   }
   animate();
