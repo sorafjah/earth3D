@@ -95,46 +95,41 @@
   const sun = new THREE.DirectionalLight(0xffffff, 1.1);
   scene.add(sun);
 
-  // 太陽は画面の右側から照らす（固定）
+  // ---- 地軸の傾き（常に右に23.4°で固定）----
+  // 地軸も自転軸も「右上」に23.4°傾けたまま固定する。
+  // 北極が右上にあり、北極点（自転軸）は季節が変わっても動かない。
+  // 季節で変わるのは「太陽の光の向き」だけ（公転による位置関係を表す）。
   const SUN_DISTANCE = 6;
-  sun.position.set(SUN_DISTANCE, 0, 0);
 
-  // ---- 地軸の傾き（季節ごとに4方向）----
-  // 地軸は常に「太陽方向に対して23.4°傾いた、一定方向の軸」になる。
-  // 自転はこの傾いた軸そのもので行う（=季節ごとに自転軸の向きが変わる）。
-  //
-  //   夏: 地軸が右（太陽側）に傾く  → X軸まわりに -AXIS_TILT 回転した軸
-  //   冬: 地軸が左（太陽と反対側）に傾く → X軸まわりに +AXIS_TILT 回転した軸
-  //   秋: 地軸が奥に傾く            → Z軸まわりに +AXIS_TILT 回転した軸
-  //   春: 地軸が手前に傾く          → Z軸まわりに -AXIS_TILT 回転した軸
-  //
-  // ※ X軸まわりの回転で「左右」、Z軸まわりの回転で「奥/手前」の傾きを表現する。
-  const SEASON_AXIS_ROTATION = {
-    summer: new THREE.Vector3(-1, 0, 0).multiplyScalar(AXIS_TILT), // 右に傾く
-    winter: new THREE.Vector3( 1, 0, 0).multiplyScalar(AXIS_TILT), // 左に傾く
-    autumn: new THREE.Vector3(0, 0,  1).multiplyScalar(AXIS_TILT), // 奥に傾く
-    spring: new THREE.Vector3(0, 0, -1).multiplyScalar(AXIS_TILT)  // 手前に傾く
+  // 季節ごとの太陽光の向き（光源の位置）
+  //   夏: 右から太陽が当たる（北極側＝右上がよく照らされる）
+  //   冬: 左から太陽が当たる（南極側＝左下がよく照らされる）
+  //   春・秋: 手前から奥（横から）当たる
+  const SEASON_SUN_POSITION = {
+    summer: new THREE.Vector3( 1, 0, 0),  // 右から
+    winter: new THREE.Vector3(-1, 0, 0),  // 左から
+    spring: new THREE.Vector3( 0, 0, 1),  // 手前から
+    autumn: new THREE.Vector3( 0, 0, 1)   // 手前から
   };
 
-  // 現在の自転軸（ローカル座標、初期値は+Y=垂直）
+  // 自転軸（ローカル座標）。常に右に23.4°傾けた軸で固定。
   let spinAxis = new THREE.Vector3(0, 1, 0);
 
-  function setSeason(season) {
-    const rot = SEASON_AXIS_ROTATION[season];
-    // 地軸（見た目の傾き）を設定
+  function setupAxis() {
+    // 地軸（見た目の傾き）を「右に23.4°」で固定
     earthTilt.rotation.set(0, 0, 0);
-    earthTilt.rotateX(rot.x);
-    earthTilt.rotateZ(rot.z);
+    earthTilt.rotateZ(-AXIS_TILT); // Z軸まわりに回すと北極が右上へ
 
-    // 自転軸も同じ傾きにする（垂直軸(0,1,0)を同じ回転で変換）
+    // 自転軸も同じ傾きに（垂直軸(0,1,0)を同じ回転で変換）
     spinAxis.set(0, 1, 0);
     const m = new THREE.Matrix4();
-    m.makeRotationX(rot.x);
-    spinAxis.applyMatrix4(m);
-    const m2 = new THREE.Matrix4();
-    m2.makeRotationZ(rot.z);
-    spinAxis.applyMatrix4(m2);
-    spinAxis.normalize();
+    m.makeRotationZ(-AXIS_TILT);
+    spinAxis.applyMatrix4(m).normalize();
+  }
+
+  function setSeason(season) {
+    const p = SEASON_SUN_POSITION[season];
+    sun.position.copy(p).multiplyScalar(SUN_DISTANCE);
   }
 
   // ---- 地球画像（GitHubから読み込み）----
@@ -151,7 +146,8 @@
   const earthSpin = new THREE.Group(); // 自転（傾いた軸で回転）
   earthTilt.add(earthSpin);
 
-  setSeason('spring'); // 初期状態
+  setupAxis();      // 地軸を右23.4°に固定
+  setSeason('spring'); // 初期の光の向き
 
   const earthGeo = new THREE.SphereGeometry(1.5, 64, 64);
   const earthMat = new THREE.MeshPhongMaterial({
