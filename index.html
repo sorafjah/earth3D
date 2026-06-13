@@ -82,6 +82,7 @@
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
   camera.position.set(0, 0, 5);
+  camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -108,23 +109,18 @@
   const SEASON_SUN_POSITION = {
     summer: new THREE.Vector3( 1, 0, 0),  // 右から
     winter: new THREE.Vector3(-1, 0, 0),  // 左から
-    spring: new THREE.Vector3( 0, 0, 1),  // 手前から
-    autumn: new THREE.Vector3( 0, 0, 1)   // 手前から
+    spring: new THREE.Vector3( 0, 0,  1),  // 手前から
+    autumn: new THREE.Vector3( 0, 0, -1)   // 奥から
   };
 
-  // 自転軸（ローカル座標）。常に右に23.4°傾けた軸で固定。
-  let spinAxis = new THREE.Vector3(0, 1, 0);
+  // 自転は earthSpin のローカルY軸で行う。
+  // earthTilt が地軸の傾きを担当しているので、結果的に
+  // 「傾いた地軸での自転」になる（spinAxis の自前計算は不要）。
 
   function setupAxis() {
-    // 地軸（見た目の傾き）を「右に23.4°」で固定
+    // 地軸（傾き）を「右に23.4°」で固定。北極が右上を向く。
     earthTilt.rotation.set(0, 0, 0);
-    earthTilt.rotateZ(-AXIS_TILT); // Z軸まわりに回すと北極が右上へ
-
-    // 自転軸も同じ傾きに（垂直軸(0,1,0)を同じ回転で変換）
-    spinAxis.set(0, 1, 0);
-    const m = new THREE.Matrix4();
-    m.makeRotationZ(-AXIS_TILT);
-    spinAxis.applyMatrix4(m).normalize();
+    earthTilt.rotateZ(-AXIS_TILT);
   }
 
   function setSeason(season) {
@@ -157,6 +153,23 @@
   });
   const earth = new THREE.Mesh(earthGeo, earthMat);
   earthSpin.add(earth);
+
+  // ---- 確認用：赤道リング（緑）と地軸（黄）----
+  // テクスチャの赤道(球の中央=緯度0)に緑のリングを置く。
+  // earthSpin に入れることで、地軸の傾き・自転と一緒に動く。
+  const DEBUG_GUIDES = false;
+  if (DEBUG_GUIDES) {
+    const ringGeo = new THREE.TorusGeometry(1.51, 0.012, 8, 80);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2; // 赤道面（水平）に寝かせる
+    earthSpin.add(ring);
+
+    // 地軸（北極→南極を貫く黄色い線）
+    const axisGeo = new THREE.CylinderGeometry(0.008, 0.008, 3.4, 8);
+    const axisMat = new THREE.MeshBasicMaterial({ color: 0xffdd33 });
+    earthSpin.add(new THREE.Mesh(axisGeo, axisMat));
+  }
 
   const loader = new THREE.TextureLoader();
   loader.load(EARTH_TEXTURE_URL, (tex) => {
@@ -206,7 +219,7 @@
 
   // ---- 操作（ドラッグ回転・ピンチ/ホイールズーム）----
   let auto = true;
-  let rotX = 0.3, rotY = 0;          // 現在の回転（視点）
+  let rotX = 0, rotY = 0;          // 現在の回転（視点）
   let velX = 0, velY = 0;            // 慣性
   let dragging = false, lastX = 0, lastY = 0;
   let pinchDist = 0;
@@ -269,7 +282,7 @@
     auto = !auto; rotateBtn.classList.toggle('on', auto);
   });
   resetBtn.addEventListener('click', () => {
-    rotX = 0.3; rotY = 0; velX = velY = 0; camera.position.z = 5;
+    rotX = 0; rotY = 0; velX = velY = 0; camera.position.z = 5;
   });
 
   seasonBtns.forEach(btn => {
@@ -310,9 +323,10 @@
     viewGroup.rotation.y = rotY;
     viewGroup.rotation.x = rotX;
 
-    // 地球の自転：傾いた自転軸(spinAxis)を中心に回転させる
+    // 地球の自転：earthSpin のローカルY軸で回す。
+    // earthTilt が傾いているので「傾いた地軸での自転」になる。
     if (auto && velX === 0 && velY === 0) {
-      earthSpin.rotateOnAxis(spinAxis, SPIN_SPEED);
+      earthSpin.rotation.y += SPIN_SPEED;
     }
 
     renderer.render(scene, camera);
