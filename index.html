@@ -71,6 +71,8 @@
   <button class="btn season" id="autumnBtn" data-season="autumn">秋</button>
   <button class="btn season" id="winterBtn" data-season="winter">冬</button>
   <button class="btn" id="contrastBtn">コントラスト強</button>
+  <button class="btn" id="axisBtn">地軸</button>
+  <button class="btn" id="equatorBtn">赤道</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -154,22 +156,21 @@
   const earth = new THREE.Mesh(earthGeo, earthMat);
   earthSpin.add(earth);
 
-  // ---- 確認用：赤道リング（緑）と地軸（黄）----
-  // テクスチャの赤道(球の中央=緯度0)に緑のリングを置く。
-  // earthSpin に入れることで、地軸の傾き・自転と一緒に動く。
-  const DEBUG_GUIDES = false;
-  if (DEBUG_GUIDES) {
-    const ringGeo = new THREE.TorusGeometry(1.51, 0.012, 8, 80);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI / 2; // 赤道面（水平）に寝かせる
-    earthSpin.add(ring);
+  // ---- 地軸・赤道ガイド（ボタンで表示切替）----
+  // 赤道(赤)・地軸(黄)。テクスチャの赤道(球の中央=緯度0)に合わせて
+  // earthSpin に入れることで、傾き・自転と一緒に動く。
+  const equatorGeo = new THREE.TorusGeometry(1.51, 0.008, 8, 80);
+  const equatorMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+  const equatorRing = new THREE.Mesh(equatorGeo, equatorMat);
+  equatorRing.rotation.x = Math.PI / 2; // 赤道面（水平）に寝かせる
+  equatorRing.visible = false;
+  earthSpin.add(equatorRing);
 
-    // 地軸（北極→南極を貫く黄色い線）
-    const axisGeo = new THREE.CylinderGeometry(0.008, 0.008, 3.4, 8);
-    const axisMat = new THREE.MeshBasicMaterial({ color: 0xffdd33 });
-    earthSpin.add(new THREE.Mesh(axisGeo, axisMat));
-  }
+  const axisGeo = new THREE.CylinderGeometry(0.008, 0.008, 3.4, 8);
+  const axisMat = new THREE.MeshBasicMaterial({ color: 0xffdd33 });
+  const axisLine = new THREE.Mesh(axisGeo, axisMat);
+  axisLine.visible = false;
+  earthSpin.add(axisLine);
 
   const loader = new THREE.TextureLoader();
   loader.load(EARTH_TEXTURE_URL, (tex) => {
@@ -289,6 +290,8 @@
     btn.addEventListener('click', () => {
       setSeason(btn.dataset.season);
       seasonBtns.forEach(b => b.classList.toggle('on', b === btn));
+      // 視点を正面（地軸が右上23.4°に正しく見える向き）に戻す
+      rotX = 0; rotY = 0; velX = velY = 0;
     });
   });
 
@@ -301,6 +304,18 @@
     ambient.intensity = highContrast ? AMBIENT_HIGH_CONTRAST : AMBIENT_NORMAL;
     contrastBtn.classList.toggle('on', highContrast);
     contrastBtn.textContent = highContrast ? 'コントラスト元に戻す' : 'コントラスト強';
+  });
+
+  // 地軸・赤道ガイドの表示切替
+  const axisBtn = document.getElementById('axisBtn');
+  const equatorBtn = document.getElementById('equatorBtn');
+  axisBtn.addEventListener('click', () => {
+    axisLine.visible = !axisLine.visible;
+    axisBtn.classList.toggle('on', axisLine.visible);
+  });
+  equatorBtn.addEventListener('click', () => {
+    equatorRing.visible = !equatorRing.visible;
+    equatorBtn.classList.toggle('on', equatorRing.visible);
   });
 
   // 数秒でヒントを薄く
