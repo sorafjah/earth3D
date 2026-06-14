@@ -27,24 +27,29 @@
 
   .panel {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    display: flex; gap: 8px; align-items: center; flex-wrap: nowrap;
     justify-content: center;
     background: rgba(2, 6, 15, 0.55);
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     padding: 8px 10px; border-radius: 16px;
-    max-width: calc(100vw - 24px);
+    max-width: calc(100vw - 16px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .panel::-webkit-scrollbar { display: none; }
   .btn {
     appearance: none; border: 1px solid var(--panel-border);
     background: rgba(255,255,255,0.06); color: var(--text);
     font: inherit; font-size: 15px; font-weight: 600;
-    padding: 10px 16px; border-radius: 12px; cursor: pointer;
-    min-height: 44px; transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    padding: 10px 14px; border-radius: 12px; cursor: pointer;
+    min-height: 44px; flex: 0 0 auto;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
   }
   .btn:hover { background: rgba(255,255,255,0.14); }
   .btn:active { transform: scale(0.96); }
   .btn.on { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .btn.season { padding: 10px 14px; font-size: 15px; }
+  .btn.season { padding: 10px 13px; font-size: 15px; }
 
   .hint {
     position: fixed; top: 52px; left: 0; right: 0; text-align: center;
@@ -64,15 +69,15 @@
 <div class="hint" id="hint">ドラッグで まわせます。ピンチ／ホイールで 大きさを かえられます。</div>
 <div class="loading" id="loading">読み込み中…</div>
 <div class="panel">
-  <button class="btn on" id="rotateBtn">自動回転</button>
-  <button class="btn" id="resetBtn">元に戻す</button>
   <button class="btn season on" id="springBtn" data-season="spring">春</button>
   <button class="btn season" id="summerBtn" data-season="summer">夏</button>
   <button class="btn season" id="autumnBtn" data-season="autumn">秋</button>
   <button class="btn season" id="winterBtn" data-season="winter">冬</button>
-  <button class="btn" id="contrastBtn">コントラスト強</button>
+  <button class="btn" id="resetBtn">正面</button>
+  <button class="btn on" id="rotateBtn">自転</button>
   <button class="btn" id="axisBtn">地軸</button>
   <button class="btn" id="equatorBtn">赤道</button>
+  <button class="btn" id="contrastBtn">明暗</button>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -83,8 +88,15 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+
+  // カメラは cameraRig に入れ、ドラッグでこの rig を回す。
+  // 地球(earthTilt)・太陽(sun)は scene 直下に固定したまま動かさないので、
+  // スワイプしても「地球と太陽光の位置関係」は変わらず、視点だけが変わる。
+  const cameraRig = new THREE.Group();
+  scene.add(cameraRig);
   camera.position.set(0, 0, 5);
   camera.lookAt(0, 0, 0);
+  cameraRig.add(camera);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -135,11 +147,8 @@
   const EARTH_TEXTURE_URL = 'https://sorafjah.github.io/earth3D/earth1024.jpg';
 
   // ---- 地球 ----
-  const viewGroup = new THREE.Group(); // ドラッグ操作・自動回転（視点）
-  scene.add(viewGroup);
-
-  const earthTilt = new THREE.Group(); // 地軸の傾き（季節で変化）
-  viewGroup.add(earthTilt);
+  const earthTilt = new THREE.Group(); // 地軸の傾き（右23.4°で固定、ドラッグでは動かない）
+  scene.add(earthTilt);
 
   const earthSpin = new THREE.Group(); // 自転（傾いた軸で回転）
   earthTilt.add(earthSpin);
@@ -160,7 +169,7 @@
   // 赤道(赤)・地軸(黄)。テクスチャの赤道(球の中央=緯度0)に合わせて
   // earthSpin に入れることで、傾き・自転と一緒に動く。
   const equatorGeo = new THREE.TorusGeometry(1.51, 0.008, 8, 80);
-  const equatorMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+  const equatorMat = new THREE.MeshBasicMaterial({ color: 0xdd4444, transparent: true, opacity: 0.45 });
   const equatorRing = new THREE.Mesh(equatorGeo, equatorMat);
   equatorRing.rotation.x = Math.PI / 2; // 赤道面（水平）に寝かせる
   equatorRing.visible = false;
@@ -183,27 +192,7 @@
     loading.textContent = '画像の読み込みに失敗しました';
   });
 
-  // ---- 大気の光（フレネル風）----
-  const atmGeo = new THREE.SphereGeometry(1.65, 48, 48);
-  const atmMat = new THREE.ShaderMaterial({
-    transparent: true, side: THREE.BackSide, depthWrite: false,
-    uniforms: { glowColor: { value: new THREE.Color(0x4ea8ff) } },
-    vertexShader: `
-      varying float intensity;
-      void main() {
-        vec3 n = normalize(normalMatrix * normal);
-        vec3 v = normalize(normalMatrix * vec3(0.0,0.0,1.0));
-        intensity = pow(0.62 - dot(n, v), 3.0);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
-      }`,
-    fragmentShader: `
-      varying float intensity;
-      uniform vec3 glowColor;
-      void main() {
-        gl_FragColor = vec4(glowColor, 1.0) * clamp(intensity,0.0,1.0);
-      }`
-  });
-  scene.add(new THREE.Mesh(atmGeo, atmMat));
+  // ---- 大気の光は廃止 ----
 
   // ---- 星空 ----
   const starGeo = new THREE.BufferGeometry();
@@ -303,7 +292,6 @@
     highContrast = !highContrast;
     ambient.intensity = highContrast ? AMBIENT_HIGH_CONTRAST : AMBIENT_NORMAL;
     contrastBtn.classList.toggle('on', highContrast);
-    contrastBtn.textContent = highContrast ? 'コントラスト元に戻す' : 'コントラスト強';
   });
 
   // 地軸・赤道ガイドの表示切替
@@ -335,8 +323,10 @@
       if (Math.abs(velX) < 0.0001) velX = 0;
       if (Math.abs(velY) < 0.0001) velY = 0;
     }
-    viewGroup.rotation.y = rotY;
-    viewGroup.rotation.x = rotX;
+    // カメラ側を回す（地球・太陽は固定なので位置関係は変わらない）。
+    // 符号を反転し、これまでと同じドラッグの感覚を保つ。
+    cameraRig.rotation.y = -rotY;
+    cameraRig.rotation.x = -rotX;
 
     // 地球の自転：earthSpin のローカルY軸で回す。
     // earthTilt が傾いているので「傾いた地軸での自転」になる。
