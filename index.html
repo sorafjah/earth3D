@@ -74,6 +74,7 @@
   <button class="btn season" id="winterBtn" data-season="winter">冬</button>
   <button class="btn" id="resetBtn">正面</button>
   <button class="btn" id="northBtn">俯瞰</button>
+  <button class="btn" id="topBtn">北極</button>
   <button class="btn on" id="rotateBtn">自転</button>
   <button class="btn" id="axisBtn">地軸</button>
   <button class="btn" id="equatorBtn">赤道</button>
@@ -268,8 +269,19 @@
   const contrastBtn = document.getElementById('contrastBtn');
   const hint = document.getElementById('hint');
 
+  // 自転ボタン：通常速 → 高速 → OFF → 通常速 の3段階
+  // 状態: 0=通常, 1=高速, 2=OFF
+  let spinState = 0;
+  const SPIN_LABELS = ['自転', '高速', '停止'];
+  rotateBtn.textContent = SPIN_LABELS[spinState];
+  rotateBtn.classList.add('on'); // 初期は通常速でON
   rotateBtn.addEventListener('click', () => {
-    auto = !auto; rotateBtn.classList.toggle('on', auto);
+    spinState = (spinState + 1) % 3;
+    if (spinState === 0) { auto = true;  spinSpeed = SPIN_SPEED_NORMAL; }
+    if (spinState === 1) { auto = true;  spinSpeed = SPIN_SPEED_FAST; }
+    if (spinState === 2) { auto = false; }
+    rotateBtn.textContent = SPIN_LABELS[spinState];
+    rotateBtn.classList.toggle('on', auto);
   });
   resetBtn.addEventListener('click', () => {
     rotX = 0; rotY = 0; velX = velY = 0; camera.position.z = 5;
@@ -279,6 +291,15 @@
   const northBtn = document.getElementById('northBtn');
   northBtn.addEventListener('click', () => {
     rotX = 0.85;   // 約50°上から見下ろす
+    rotY = 0;
+    velX = velY = 0;
+    camera.position.z = 5;
+  });
+
+  // 北極ボタン：真上（北極点の真上）から見下ろす視点
+  const topBtn = document.getElementById('topBtn');
+  topBtn.addEventListener('click', () => {
+    rotX = Math.PI / 2 - 0.05; // ほぼ真上（限界まで）
     rotY = 0;
     velX = velY = 0;
     camera.position.z = 5;
@@ -317,7 +338,9 @@
   setTimeout(() => { hint.style.opacity = '0'; }, 5000);
 
   // ---- ループ ----
-  const SPIN_SPEED = 0.0016;
+  const SPIN_SPEED_NORMAL = 0.0016;
+  const SPIN_SPEED_FAST   = 0.008;
+  let spinSpeed = SPIN_SPEED_NORMAL;
   function animate() {
     requestAnimationFrame(animate);
 
@@ -338,7 +361,7 @@
     // 地球の自転：earthSpin のローカルY軸で回す。
     // earthTilt が傾いているので「傾いた地軸での自転」になる。
     if (auto && velX === 0 && velY === 0) {
-      earthSpin.rotation.y += SPIN_SPEED;
+      earthSpin.rotation.y += spinSpeed;
     }
 
     renderer.render(scene, camera);
