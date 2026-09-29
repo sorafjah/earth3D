@@ -73,6 +73,7 @@
   <button class="btn season" id="autumnBtn" data-season="autumn">秋</button>
   <button class="btn season" id="winterBtn" data-season="winter">冬</button>
   <button class="btn" id="resetBtn">正面</button>
+  <button class="btn" id="northBtn">俯瞰</button>
   <button class="btn on" id="rotateBtn">自転</button>
   <button class="btn" id="axisBtn">地軸</button>
   <button class="btn" id="equatorBtn">赤道</button>
@@ -274,12 +275,19 @@
     rotX = 0; rotY = 0; velX = velY = 0; camera.position.z = 5;
   });
 
+  // 俯瞰ボタン：北極側から斜め上に視点を移動（日本への日照が見やすい角度）
+  const northBtn = document.getElementById('northBtn');
+  northBtn.addEventListener('click', () => {
+    rotX = 0.85;   // 約50°上から見下ろす
+    rotY = 0;
+    velX = velY = 0;
+    camera.position.z = 5;
+  });
+
   seasonBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       setSeason(btn.dataset.season);
       seasonBtns.forEach(b => b.classList.toggle('on', b === btn));
-      // 視点を正面（地軸が右上23.4°に正しく見える向き）に戻す
-      rotX = 0; rotY = 0; velX = velY = 0;
     });
   });
 
