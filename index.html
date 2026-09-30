@@ -78,6 +78,8 @@
   <button class="btn on" id="rotateBtn">自転</button>
   <button class="btn" id="axisBtn">地軸</button>
   <button class="btn" id="equatorBtn">赤道</button>
+  <button class="btn" id="japanBtn">日本</button>
+  <button class="btn" id="dayNightBtn">昼夜</button>
   <button class="btn" id="contrastBtn">明暗</button>
 </div>
 
@@ -181,6 +183,103 @@
   const axisLine = new THREE.Mesh(axisGeo, axisMat);
   axisLine.visible = false;
   earthSpin.add(axisLine);
+
+  // ---- 日本マーカー（ボタンで表示切替）----
+  // テクスチャは正距円筒図法。Three.js の球の貼り方に合わせて
+  // 緯度・経度 → 球面上の位置 に変換する。
+  function latLonToVec3(lat, lon, r) {
+    const phi = (lon + 180) * Math.PI / 180;
+    const theta = (90 - lat) * Math.PI / 180;
+    return new THREE.Vector3(
+      -r * Math.cos(phi) * Math.sin(theta),
+       r * Math.cos(theta),
+       r * Math.sin(phi) * Math.sin(theta)
+    );
+  }
+  const JAPAN_LAT = 36, JAPAN_LON = 138; // 本州の中央あたり
+  const japanMarker = new THREE.Group();
+  const japanDot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff3399 }) // 夜側でも見えるよう、光の影響を受けない色
+  );
+  japanMarker.add(japanDot);
+  japanMarker.position.copy(latLonToVec3(JAPAN_LAT, JAPAN_LON, 1.52));
+  japanMarker.visible = false;
+  earthSpin.add(japanMarker); // 自転と一緒に動く
+
+  // ---- 日本の緯線（北緯36°を一周する線）----
+  // 日が当たっている部分を黄色、当たっていない部分を青で塗り分ける。
+  // 黄色と青の長さの比 ＝ 日本の昼と夜の長さの比。
+  // 緯線は自転しても同じ場所にあるので earthTilt に入れる（回さない）。
+  // 季節（太陽の向き）が変わったときだけ色を塗り直す。
+  const DAY_COLOR = new THREE.Color(0xffcc00);   // 昼：黄色
+  const NIGHT_COLOR = new THREE.Color(0x4488ff); // 夜：青
+  const latR = 1.515 * Math.cos(JAPAN_LAT * Math.PI / 180);
+  const latY = 1.515 * Math.sin(JAPAN_LAT * Math.PI / 180);
+  const latPts = [];
+  for (let i = 0; i < 360; i++) {
+    const a = i / 360 * Math.PI * 2;
+    latPts.push(new THREE.Vector3(latR * Math.cos(a), latY, latR * Math.sin(a)));
+  }
+  const latCurve = new THREE.CatmullRomCurve3(latPts, true);
+  const latGeo = new THREE.TubeGeometry(latCurve, 720, 0.016, 8, true);
+  latGeo.setAttribute('color',
+    new THREE.BufferAttribute(new Float32Array(latGeo.attributes.position.count * 3), 3));
+  const latLine = new THREE.Mesh(latGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
+  latLine.visible = false;
+  earthTilt.add(latLine);
+
+  // 「昼」「夜」の文字ラベル（緯線の子にして、表示・非表示を緯線と連動させる）
+  function makeLabel(text, color) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+    ctx.font = 'bold 84px "BIZ UDPGothic", "Hiragino Sans", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(text, 64, 68);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 64, 68);
+    const tex = new THREE.CanvasTexture(cv);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+    sp.scale.set(0.32, 0.32, 1);
+    return sp;
+  }
+  const dayLabel = makeLabel('昼', '#ffcc00');
+  const nightLabel = makeLabel('夜', '#6fa8ff');
+  latLine.add(dayLabel);
+  latLine.add(nightLabel);
+
+  function updateLatColors() {
+    earthTilt.updateMatrixWorld(true);
+    const sunDir = sun.position.clone().normalize();
+
+    // 昼の部分のまん中（太陽にいちばん近い点）と、夜の部分のまん中（その反対）を探す
+    let best = -Infinity, bestA = 0;
+    const w = new THREE.Vector3();
+    for (let i = 0; i < 360; i++) {
+      const a = i / 360 * Math.PI * 2;
+      w.set(latR * Math.cos(a), latY, latR * Math.sin(a));
+      latLine.localToWorld(w);
+      const d = w.dot(sunDir);
+      if (d > best) { best = d; bestA = a; }
+    }
+    const LABEL_R = latR + 0.28; // 線の少し外側に置く
+    dayLabel.position.set(LABEL_R * Math.cos(bestA), latY + 0.05, LABEL_R * Math.sin(bestA));
+    nightLabel.position.set(-LABEL_R * Math.cos(bestA), latY + 0.05, -LABEL_R * Math.sin(bestA));
+
+    const pos = latGeo.attributes.position;
+    const col = latGeo.attributes.color;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      latLine.localToWorld(v);
+      const c = v.dot(sunDir) > 0 ? DAY_COLOR : NIGHT_COLOR;
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+  }
+  updateLatColors();
 
   const loader = new THREE.TextureLoader();
   loader.load(EARTH_TEXTURE_URL, (tex) => {
@@ -307,6 +406,7 @@
   seasonBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       setSeason(btn.dataset.season);
+      updateLatColors();
       seasonBtns.forEach(b => b.classList.toggle('on', b === btn));
     });
   });
@@ -331,6 +431,18 @@
   equatorBtn.addEventListener('click', () => {
     equatorRing.visible = !equatorRing.visible;
     equatorBtn.classList.toggle('on', equatorRing.visible);
+  });
+
+  // 日本マーカー・境界線の表示切替
+  const japanBtn = document.getElementById('japanBtn');
+  const dayNightBtn = document.getElementById('dayNightBtn');
+  japanBtn.addEventListener('click', () => {
+    japanMarker.visible = !japanMarker.visible;
+    japanBtn.classList.toggle('on', japanMarker.visible);
+  });
+  dayNightBtn.addEventListener('click', () => {
+    latLine.visible = !latLine.visible;
+    dayNightBtn.classList.toggle('on', latLine.visible);
   });
 
   // 数秒でヒントを薄く
